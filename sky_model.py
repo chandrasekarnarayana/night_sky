@@ -1,8 +1,23 @@
-"""Astronomical model utilities for v0.3.
+"""Headless astronomical model utilities for Night Sky Viewer (v0.3).
 
-Provides `Star` and `Planet` dataclasses, and `SkyModel` which loads the
-bright-star catalog and computes a snapshot of visible stars and planets
-(alt/az) for a given observer location and time.
+This module provides the computational engine used throughout the
+application and tests. The primary entry point is :class:`SkyModel`, which
+can compute a :class:`SkySnapshot` for a given observer location and UTC
+time. The snapshot is a stable, serializable API between the model and
+UI layers (2D/3D views, export, and CLI tools).
+
+Units and conventions
+- All angular coordinates (RA, Dec, Alt, Az) are expressed in degrees.
+- Altitude/declination range: [-90.0, +90.0] degrees (negative = below
+    horizon).
+- Azimuth range: [0.0, 360.0) degrees, normalized with `% 360` where
+    appropriate (0 = North, 90 = East, 180 = South, 270 = West).
+- Times passed to the API should be timezone-aware :class:`datetime` in
+    UTC; naive datetimes are interpreted as local time and converted to
+    UTC.
+
+The dataclasses ``Star``, ``Planet``, and ``SkySnapshot`` are lightweight
+value objects intended for consumption by GUI code, exports, and tests.
 """
 
 from dataclasses import dataclass
@@ -20,6 +35,18 @@ from .data_manager import load_bright_stars
 
 @dataclass
 class Star:
+    """Representation of a catalog star at a specific observation time.
+
+    Attributes
+    - id: Integer identifier (from the bright-star catalog).
+    - name: Common name or Bayer/Flamsteed designation.
+    - ra_deg: Right ascension in degrees (ICRS epoch) [deg].
+    - dec_deg: Declination in degrees (ICRS epoch) [deg].
+    - mag: Visual magnitude (smaller = brighter).
+    - alt_deg: Altitude above horizon in degrees ([-90, 90]).
+    - az_deg: Azimuth in degrees [0, 360).
+    """
+
     id: int
     name: str
     ra_deg: float
@@ -31,7 +58,17 @@ class Star:
 
 @dataclass
 class Planet:
-    """Represents a planet's position in the sky."""
+    """Represents a solar-system body (planet) at a specific observation time.
+
+    Attributes
+    - name: Capitalized planet name (e.g. "Mars").
+    - ra_deg: Right ascension in degrees [deg].
+    - dec_deg: Declination in degrees [deg].
+    - alt_deg: Altitude above horizon in degrees ([-90, 90]).
+    - az_deg: Azimuth in degrees [0, 360).
+    - magnitude: Optional visual magnitude when available.
+    """
+
     name: str
     ra_deg: float
     dec_deg: float
@@ -42,7 +79,15 @@ class Planet:
 
 @dataclass
 class SkySnapshot:
-    """Complete snapshot of visible sky from a location and time."""
+    """Immutable snapshot of the visible sky for a given observer/time.
+
+    This is the stable headless API returned by :meth:`SkyModel.compute_snapshot`.
+
+    Attributes
+    - visible_stars: List of :class:`Star` objects with ``alt_deg > 0``.
+    - visible_planets: List of :class:`Planet` objects with ``alt_deg > 0``.
+    """
+
     visible_stars: List[Star]
     visible_planets: List[Planet]
 
@@ -113,16 +158,27 @@ class SkyModel:
         return visible_planets
 
     def compute_snapshot(self, lat_deg: float, lon_deg: float, dt_utc: datetime) -> SkySnapshot:
-        """Compute a snapshot of visible stars and planets at the given observer and time.
+        """Compute a headless snapshot of the visible sky for an observer.
+
+        The returned :class:`SkySnapshot` contains lists of stars and planets
+        that are above the horizon (``alt_deg > 0``) for the requested
+        observer position and time.
 
         Parameters
-        - lat_deg, lon_deg: observer coordinates in degrees
-        - dt_utc: a `datetime`. If naive, it is interpreted as local time and
-          converted to UTC; otherwise it will be converted to UTC.
+        - lat_deg (float): Observer latitude in degrees (positive = North).
+        - lon_deg (float): Observer longitude in degrees (positive = East).
+        - dt_utc (datetime): Observation time. If naive, the datetime is
+          interpreted as local time and converted to UTC; timezone-aware
+          datetimes are converted to UTC before astronomical calculations.
 
-        Returns a `SkySnapshot` containing:
-        - visible_stars: list[Star] for stars with altitude > 0 deg
-        - visible_planets: list[Planet] for planets with altitude > 0 deg
+        Returns
+        - SkySnapshot: contains ``visible_stars`` and ``visible_planets``.
+
+        Notes
+        - All angular outputs are in degrees: ``ra_deg``, ``dec_deg``,
+          ``alt_deg`` ([-90, 90]), ``az_deg`` ([0, 360)).
+        - The method is deterministic and relies on the internal bright-
+          star catalog loaded by :meth:`load_stars`.
         """
         # Normalize datetime to timezone-aware UTC
         if dt_utc.tzinfo is None:
@@ -160,9 +216,9 @@ class SkyModel:
                     alt_deg=float(alt[i]),
                     az_deg=float(az[i]),
                 ))
-        
+
         # Get planets
         visible_planets = self.get_planet_positions(lat_deg, lon_deg, dt_utc)
-        
+
         return SkySnapshot(visible_stars=visible_stars, visible_planets=visible_planets)
 

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade pip & install build tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel build
+
+      - name: Install test dependencies (minimal)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy astropy
+
+      - name: Install package (editable, no deps)
+        run: |
+          python -m pip install -e . --no-deps
+
+      - name: Run unit tests
+        run: python -m unittest discover -v night_sky/tests

@@ -79,6 +79,76 @@ class SkyView3D(QtWidgets.QWidget):
         y = r * np.cos(az_rad)
         return x, y, z
 
+    def _compute_screen_coords_for_altaz(self, alt_deg: float, az_deg: float, width: int, height: int):
+        """Map a single Alt/Az point to overlay pixel coordinates.
+
+        Uses the same dome projection as the 2D dome view: radial distance r=(90-alt)/90,
+        then maps to pixel coordinates centered in the overlay with a scale factor.
+        Returns (px, py) as integers.
+        """
+        az_rad = np.radians(az_deg)
+        r = float(np.clip((90.0 - alt_deg) / 90.0, 0.0, 1.0))
+        x = r * np.sin(az_rad)
+        y = r * np.cos(az_rad)
+        cx = width / 2.0
+        cy = height / 2.0
+        scale = 0.45 * min(width, height)
+        px = int(cx + scale * x)
+        py = int(cy - scale * y)
+        return px, py
+
+    def _place_labels_greedy_pixels(self, candidates, width, height, font: QtGui.QFont):
+        """Place labels (pixel coords) using a greedy bounding-box avoidance.
+
+        candidates: list of dicts with keys: 'id','px','py','text','priority'
+        Returns list of placed dicts with keys 'x','y','text','src' where x,y are
+        the top-left pixel coordinates to place the QLabel / drawText.
+        """
+        fm = QtGui.QFontMetrics(font)
+        def _rect_for_text(cand_x, cand_y, text, offx=0, offy=0):
+            left = cand_x + 6 + offx
+            top = cand_y - 6 + offy
+            w = fm.horizontalAdvance(text)
+            h = fm.height()
+            return (left, top, left + w, top + h)
+
+        def _intersect(a, b):
+            return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
+        placed = []
+        occupied = []
+        # sort by priority then (for stars) magnitude if provided
+        candidates.sort(key=lambda c: (c.get('priority', 10), c.get('mag', 0)))
+
+        offsets = [(0, 0), (12, 0), (-12, 0), (0, 12), (0, -12), (12, 12), (-12, 12), (12, -12), (-12, -12)]
+        for c in candidates:
+            cand_x = int(c['px'])
+            cand_y = int(c['py'])
+            text = c['text']
+            placed_ok = False
+            for offx, offy in offsets:
+                rect = _rect_for_text(cand_x, cand_y, text, offx, offy)
+                # skip if out of bounds
+                if rect[0] < 0 or rect[1] < 0 or rect[2] > width or rect[3] > height:
+                    continue
+                collision = False
+                for occ in occupied:
+                    if _intersect(rect, occ):
+                        collision = True
+                        break
+                if not collision:
+                    occupied.append(rect)
+                    placed.append({'x': rect[0], 'y': rect[1], 'text': text, 'src': c})
+                    placed_ok = True
+                    break
+            # if not placed and high priority, force at base position
+            if not placed_ok and c.get('priority', 10) <= 1:
+                rect = _rect_for_text(cand_x, cand_y, text, 0, 0)
+                occupied.append(rect)
+                placed.append({'x': rect[0], 'y': rect[1], 'text': text, 'src': c})
+
+        return placed
+
     def _mag_to_size(self, mag: float) -> float:
         """Map magnitude to marker size (brighter = larger)."""
         size = (6.0 - mag) * 0.5
@@ -169,95 +239,57 @@ class SkyView3D(QtWidgets.QWidget):
                 except Exception:
                     pass
             self._overlay_labels = []
+            self._overlay_label_positions = []
 
             if self.show_star_labels or self.show_planet_labels:
                 # Ensure overlay fills the widget
                 self._overlay.setGeometry(self.glview.geometry())
                 w = max(10, self._overlay.width())
                 h = max(10, self._overlay.height())
-                cx = w / 2.0
-                cy = h / 2.0
-                scale = 0.45 * min(w, h)
 
+                # Build candidates in pixel coords
+                candidates = []
                 if self.show_star_labels:
                     for s in visible_stars:
                         try:
-                            if hasattr(s, 'mag') and s.mag < 2.0:
-                                az_rad = np.radians(s.az_deg)
-                                r = float(np.clip((90.0 - s.alt_deg) / 90.0, 0.0, 1.0))
-                                x = r * np.sin(az_rad)
-                                y = r * np.cos(az_rad)
-                                px = int(cx + scale * x)
-                                py = int(cy - scale * y)
-                                # collision avoidance in pixel space
-                                min_px = 24
-                                placed_ok = False
-                                for ox, oy in [(0, 0), (12, 0), (-12, 0), (0, 12), (0, -12), (12, 12)]:
-                                    cand_x = px + ox
-                                    cand_y = py + oy
-                                    ok = True
-                                    for (ex, ey) in [(lbl.x(), lbl.y()) for lbl in self._overlay_labels]:
-                                        if ((cand_x - ex) ** 2 + (cand_y - ey) ** 2) ** 0.5 < min_px:
-                                            ok = False
-                                            break
-                                    if ok:
-                                        lbl = QtWidgets.QLabel(self._overlay)
-                                        lbl.setText(s.name)
-                                        lbl.setStyleSheet('color: rgb(220,220,255); background: rgba(0,0,0,0);')
-                                        lbl.move(cand_x + 6, cand_y - 6)
-                                        lbl.show()
-                                        self._overlay_labels.append(lbl)
-                                        placed_ok = True
-                                        break
-                                if not placed_ok:
-                                    # fallback: place at original pixel
-                                    lbl = QtWidgets.QLabel(self._overlay)
-                                    lbl.setText(s.name)
-                                    lbl.setStyleSheet('color: rgb(220,220,255); background: rgba(0,0,0,0);')
-                                    lbl.move(px + 6, py - 6)
-                                    lbl.show()
-                                    self._overlay_labels.append(lbl)
+                            if hasattr(s, 'mag') and s.mag < 4.0:
+                                px, py = self._compute_screen_coords_for_altaz(s.alt_deg, s.az_deg, w, h)
+                                priority = 1 if s.mag < 2.0 else 2
+                                candidates.append({'id': s.id, 'px': px, 'py': py, 'text': s.name, 'priority': priority, 'mag': s.mag})
                         except Exception:
                             continue
-
                 if self.show_planet_labels:
                     for p in visible_planets:
                         try:
-                            az_rad = np.radians(p.az_deg)
-                            r = float(np.clip((90.0 - p.alt_deg) / 90.0, 0.0, 1.0))
-                            x = r * np.sin(az_rad)
-                            y = r * np.cos(az_rad)
-                            px = int(cx + scale * x)
-                            py = int(cy - scale * y)
-                            # collision avoidance
-                            min_px = 24
-                            placed_ok = False
-                            for ox, oy in [(0, 0), (12, 0), (-12, 0), (0, 12), (0, -12)]:
-                                cand_x = px + ox
-                                cand_y = py + oy
-                                ok = True
-                                for (ex, ey) in [(lbl.x(), lbl.y()) for lbl in self._overlay_labels]:
-                                    if ((cand_x - ex) ** 2 + (cand_y - ey) ** 2) ** 0.5 < min_px:
-                                        ok = False
-                                        break
-                                if ok:
-                                    lbl = QtWidgets.QLabel(self._overlay)
-                                    lbl.setText(p.name)
-                                    lbl.setStyleSheet('color: rgb(255,220,80); background: rgba(0,0,0,0);')
-                                    lbl.move(cand_x + 6, cand_y - 6)
-                                    lbl.show()
-                                    self._overlay_labels.append(lbl)
-                                    placed_ok = True
-                                    break
-                            if not placed_ok:
-                                lbl = QtWidgets.QLabel(self._overlay)
-                                lbl.setText(p.name)
-                                lbl.setStyleSheet('color: rgb(255,220,80); background: rgba(0,0,0,0);')
-                                lbl.move(px + 6, py - 6)
-                                lbl.show()
-                                self._overlay_labels.append(lbl)
+                            px, py = self._compute_screen_coords_for_altaz(p.alt_deg, p.az_deg, w, h)
+                            candidates.append({'id': getattr(p, 'name', None), 'px': px, 'py': py, 'text': p.name, 'priority': 0})
                         except Exception:
                             continue
+
+                # Font used both for overlay QLabel sizing and export consistency
+                font = QtGui.QFont()
+                font.setPointSize(max(8, int(min(w, h) / 200)))
+
+                placed = self._place_labels_greedy_pixels(candidates, w, h, font)
+
+                # Create QLabel overlays and record positions for export
+                for pl in placed:
+                    try:
+                        lbl = QtWidgets.QLabel(self._overlay)
+                        lbl.setText(pl['text'])
+                        # color planets differently if source indicates priority 0
+                        if pl['src'].get('priority', 10) == 0:
+                            lbl.setStyleSheet('color: rgb(255,220,80); background: rgba(0,0,0,0);')
+                        else:
+                            lbl.setStyleSheet('color: rgb(220,220,255); background: rgba(0,0,0,0);')
+                        lbl.setFont(font)
+                        lbl.move(int(pl['x']), int(pl['y']))
+                        lbl.show()
+                        self._overlay_labels.append(lbl)
+                        # Save exact draw positions for export (top-left)
+                        self._overlay_label_positions.append({'x': int(pl['x']), 'y': int(pl['y']), 'text': pl['text'], 'priority': pl['src'].get('priority', 10)})
+                    except Exception:
+                        continue
         except Exception:
             # Non-critical: overlay labels are best-effort
             pass
@@ -327,39 +359,52 @@ class SkyView3D(QtWidgets.QWidget):
                 cx = w / 2.0
                 cy = h / 2.0
                 scale = 0.45 * min(w, h)
-
                 font = QtGui.QFont()
                 font.setPointSize(max(8, int(min(w, h) / 200)))
                 painter.setFont(font)
 
-                if self.show_star_labels:
-                    painter.setPen(QtGui.QColor(220, 220, 255))
-                    for s in self._stars_cache:
+                # If we have cached overlay positions (from update_sky), use them to
+                # draw text so exports match on-screen overlay.
+                if getattr(self, '_overlay_label_positions', None):
+                    for lbl in self._overlay_label_positions:
                         try:
-                            if hasattr(s, 'mag') and s.mag < 2.0:
-                                az_rad = np.radians(s.az_deg)
-                                r = float(np.clip((90.0 - s.alt_deg) / 90.0, 0.0, 1.0))
+                            if lbl.get('priority', 10) == 0:
+                                painter.setPen(QtGui.QColor(255, 220, 80))
+                            else:
+                                painter.setPen(QtGui.QColor(220, 220, 255))
+                            painter.drawText(int(lbl['x']), int(lbl['y']), lbl['text'])
+                        except Exception:
+                            continue
+                else:
+                    # Fallback: approximate positions directly from alt/az
+                    if self.show_star_labels:
+                        painter.setPen(QtGui.QColor(220, 220, 255))
+                        for s in self._stars_cache:
+                            try:
+                                if hasattr(s, 'mag') and s.mag < 2.0:
+                                    az_rad = np.radians(s.az_deg)
+                                    r = float(np.clip((90.0 - s.alt_deg) / 90.0, 0.0, 1.0))
+                                    x = r * np.sin(az_rad)
+                                    y = r * np.cos(az_rad)
+                                    px = int(cx + scale * x)
+                                    py = int(cy - scale * y)
+                                    painter.drawText(px + 6, py - 6, s.name)
+                            except Exception:
+                                continue
+
+                    if self.show_planet_labels:
+                        painter.setPen(QtGui.QColor(255, 220, 80))
+                        for p in self._planets_cache:
+                            try:
+                                az_rad = np.radians(p.az_deg)
+                                r = float(np.clip((90.0 - p.alt_deg) / 90.0, 0.0, 1.0))
                                 x = r * np.sin(az_rad)
                                 y = r * np.cos(az_rad)
                                 px = int(cx + scale * x)
                                 py = int(cy - scale * y)
-                                painter.drawText(px + 6, py - 6, s.name)
-                        except Exception:
-                            continue
-
-                if self.show_planet_labels:
-                    painter.setPen(QtGui.QColor(255, 220, 80))
-                    for p in self._planets_cache:
-                        try:
-                            az_rad = np.radians(p.az_deg)
-                            r = float(np.clip((90.0 - p.alt_deg) / 90.0, 0.0, 1.0))
-                            x = r * np.sin(az_rad)
-                            y = r * np.cos(az_rad)
-                            px = int(cx + scale * x)
-                            py = int(cy - scale * y)
-                            painter.drawText(px + 6, py - 6, p.name)
-                        except Exception:
-                            continue
+                                painter.drawText(px + 6, py - 6, p.name)
+                            except Exception:
+                                continue
 
                 painter.end()
             except Exception:
@@ -378,3 +423,17 @@ class SkyView3D(QtWidgets.QWidget):
         self.show_planet_labels = bool(flag)
         if self._stars_cache or self._planets_cache:
             self.update_sky(self._stars_cache, self._planets_cache)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent):
+        # Ensure overlay geometry and recompute label placement on resize
+        try:
+            super().resizeEvent(event)
+        except Exception:
+            pass
+        try:
+            self._overlay.setGeometry(self.glview.geometry())
+            if getattr(self, '_stars_cache', None) or getattr(self, '_planets_cache', None):
+                # Recompute placements using cached data
+                self.update_sky(self._stars_cache, self._planets_cache)
+        except Exception:
+            pass

@@ -1,7 +1,7 @@
 from PyQt5 import QtWidgets
 import pyqtgraph as pg
 import numpy as np
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QFontMetrics
 from PyQt5.QtCore import Qt
 
 
@@ -147,87 +147,132 @@ class SkyView2D(QtWidgets.QWidget):
                 pass
         self._label_items = []
 
-        # Draw labels if enabled
-        placed = []  # list of placed label positions in data coords
-        def _is_far(px, py, placed_list, min_dist):
-            for (ox, oy) in placed_list:
-                if ((px - ox) ** 2 + (py - oy) ** 2) ** 0.5 < min_dist:
-                    return False
-            return True
+        # Build label candidates and place them using greedy bounding-box avoidance
+        candidates = []
+        # planets: highest priority (0)
+        if self.show_planet_labels:
+            for p in visible_planets:
+                if self.mode == 'rect':
+                    x = float(p.az_deg % 360.0)
+                    y = float(p.alt_deg)
+                else:
+                    az_rad = np.radians(p.az_deg)
+                    r = float(np.clip((90.0 - p.alt_deg) / 90.0, 0.0, 1.0))
+                    x = r * np.sin(az_rad)
+                    y = r * np.cos(az_rad)
+                candidates.append({'id': getattr(p, 'name', None), 'x': x, 'y': y, 'text': p.name, 'priority': 0})
 
+        # stars: bright stars next (priority 1), optionally include others with lower priority
         if self.show_star_labels:
-            # Label bright stars (mag < 2) with simple collision avoidance
-            if self.mode == 'rect':
-                min_dist = 2.0  # degrees
-                offsets = [(0, 0), (1.0, 0), (-1.0, 0), (0, 1.0), (0, -1.0), (1.0, 1.0), (-1.0, -1.0)]
-            else:
-                min_dist = 0.03  # dome normalized units
-                offsets = [(0, 0), (0.02, 0), (-0.02, 0), (0, 0.02), (0, -0.02), (0.02, 0.02)]
-
             for s in visible_stars:
                 try:
-                    if hasattr(s, 'mag') and s.mag < 2.0:
+                    mag = getattr(s, 'mag', 99.0)
+                    # only label reasonably bright stars by default
+                    if mag < 4.0:
                         pos = self._star_pos_by_id.get(s.id)
                         if pos is None:
                             continue
-                        base_x, base_y = pos[0], pos[1]
-                        placed_pos = None
-                        for dx, dy in offsets:
-                            cand_x = base_x + dx
-                            cand_y = base_y + dy
-                            if _is_far(cand_x, cand_y, placed, min_dist):
-                                placed_pos = (cand_x, cand_y)
-                                placed.append(placed_pos)
-                                break
-                        if placed_pos is None:
-                            # fallback: use base pos
-                            placed_pos = (base_x, base_y)
-                            placed.append(placed_pos)
-
-                        txt = pg.TextItem(text=s.name, color=(220, 220, 255), anchor=(0, 0))
-                        txt.setFont(QtWidgets.QApplication.font())
-                        txt.setPos(placed_pos[0], placed_pos[1])
-                        self.plot.addItem(txt)
-                        self._label_items.append(txt)
+                        priority = 1 if mag < 2.0 else 2
+                        candidates.append({'id': s.id, 'x': pos[0], 'y': pos[1], 'text': s.name, 'priority': priority, 'mag': mag})
                 except Exception:
                     continue
 
-        if self.show_planet_labels:
-            # Use same collision avoidance strategy as for stars
-            for p in visible_planets:
-                try:
-                    if self.mode == 'rect':
-                        base_x = float(p.az_deg % 360.0)
-                        base_y = float(p.alt_deg)
-                        min_dist = 2.0
-                        offsets = [(0, 0), (1.5, 0), (-1.5, 0), (0, 1.5), (0, -1.5), (1.5, 1.5)]
-                    else:
-                        az_rad = np.radians(p.az_deg)
-                        r = float(np.clip((90.0 - p.alt_deg) / 90.0, 0.0, 1.0))
-                        base_x = r * np.sin(az_rad)
-                        base_y = r * np.cos(az_rad)
-                        min_dist = 0.04
-                        offsets = [(0, 0), (0.03, 0), (-0.03, 0), (0, 0.03), (0, -0.03)]
+        # Occupied rects start empty; we could seed with star/planet marker boxes if desired
+        occupied = []
 
-                    placed_pos = None
-                    for dx, dy in offsets:
-                        cand_x = base_x + dx
-                        cand_y = base_y + dy
-                        if _is_far(cand_x, cand_y, placed, min_dist):
-                            placed_pos = (cand_x, cand_y)
-                            placed.append(placed_pos)
+        def _font_metrics():
+            return QFontMetrics(QtWidgets.QApplication.font())
+
+        def _estimate_label_rect(xc, yc, text, offset_x=0.0, offset_y=0.0):
+            # Estimate label size in data coordinates using font metrics and plot view range
+            fm = _font_metrics()
+            pixel_w = fm.horizontalAdvance(text)
+            pixel_h = fm.height()
+            # view ranges
+            try:
+                vr = self.plot.getViewBox().viewRange()
+                x_min, x_max = vr[0][0], vr[0][1]
+                y_min, y_max = vr[1][0], vr[1][1]
+            except Exception:
+                # fallback ranges used earlier
+                if self.mode == 'rect':
+                    x_min, x_max = 0.0, 360.0
+                    y_min, y_max = 0.0, 90.0
+                else:
+                    x_min, x_max = -1.05, 1.05
+                    y_min, y_max = -1.05, 1.05
+            data_w = x_max - x_min
+            data_h = y_max - y_min
+            widget_w = max(1, self.plot.width())
+            widget_h = max(1, self.plot.height())
+            scale_x = data_w / widget_w
+            scale_y = data_h / widget_h
+            lab_w = pixel_w * scale_x
+            lab_h = pixel_h * scale_y
+            # Anchor label top-left at (xc + offset_x, yc + offset_y)
+            left = xc + offset_x
+            top = yc + offset_y
+            right = left + lab_w
+            bottom = top + lab_h
+            # normalize rect so top < bottom
+            if top > bottom:
+                top, bottom = bottom, top
+            if left > right:
+                left, right = right, left
+            return (left, top, right, bottom)
+
+        def _rects_intersect(a, b):
+            # rect: (l,t,r,b)
+            return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
+        def _place_labels_greedy(candidates_list):
+            placed_labels = []
+            # sort by priority (low number = higher priority) and optional magnitude for stars
+            candidates_list.sort(key=lambda c: (c.get('priority', 10), c.get('mag', 0)))
+            # offsets in data units
+            if self.mode == 'rect':
+                dx = 2.0
+                dy = 1.2
+            else:
+                dx = 0.04
+                dy = 0.03
+            offsets = [(0, dy), (dx, 0), (-dx, 0), (dx, dy), (-dx, dy), (0, -dy), (dx, -dy), (-dx, -dy), (0, 0)]
+
+            for c in candidates_list:
+                base_x = c['x']
+                base_y = c['y']
+                placed = False
+                for offx, offy in offsets:
+                    rect = _estimate_label_rect(base_x, base_y, c['text'], offset_x=offx, offset_y=offy)
+                    collision = False
+                    for occ in occupied:
+                        if _rects_intersect(rect, occ):
+                            collision = True
                             break
-                    if placed_pos is None:
-                        placed_pos = (base_x, base_y)
-                        placed.append(placed_pos)
+                    if not collision:
+                        occupied.append(rect)
+                        placed_labels.append({'x': rect[0], 'y': rect[1], 'text': c['text'], 'src': c})
+                        placed = True
+                        break
+                # If not placed and low priority (e.g., priority >=2), skip
+                if not placed and c.get('priority', 10) <= 1:
+                    # try to force at base location even if overlapping for high priority
+                    rect = _estimate_label_rect(base_x, base_y, c['text'], offset_x=0.0, offset_y=0.0)
+                    occupied.append(rect)
+                    placed_labels.append({'x': rect[0], 'y': rect[1], 'text': c['text'], 'src': c})
+            return placed_labels
 
-                    txt = pg.TextItem(text=p.name, color=(255, 220, 80), anchor=(0, 0))
-                    txt.setFont(QtWidgets.QApplication.font())
-                    txt.setPos(placed_pos[0], placed_pos[1])
-                    self.plot.addItem(txt)
-                    self._label_items.append(txt)
-                except Exception:
-                    continue
+        placed = _place_labels_greedy(candidates)
+        # Create TextItems for placed labels
+        for pl in placed:
+            try:
+                txt = pg.TextItem(text=pl['text'], color=(255, 220, 220), anchor=(0, 0))
+                txt.setFont(QtWidgets.QApplication.font())
+                txt.setPos(pl['x'], pl['y'])
+                self.plot.addItem(txt)
+                self._label_items.append(txt)
+            except Exception:
+                continue
         # If constellation segments are present, draw them
         if self.constellation_segments:
             self.update_constellations(self.constellation_segments)

@@ -1,11 +1,11 @@
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QHBoxLayout, QVBoxLayout, QWidget, QDateTimeEdit, QFileDialog, QTabWidget
+from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QHBoxLayout, QVBoxLayout, QWidget, QDateTimeEdit, QFileDialog, QTabWidget, QInputDialog
 from datetime import datetime, timezone
 
 from .sky_model import SkyModel
 from .sky_view_2d import SkyView2D
 from .earth_view_2d import EarthView2D
-from .export import export_widget_to_png
+from .export import export_view_to_png
 from .settings import DEFAULTS
 from .location_selector import LocationSelector
 from .constellations import load_constellation_lines, build_constellation_segments
@@ -254,6 +254,19 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
+    def closeEvent(self, event):
+        """Persist preferences on application close and continue closing."""
+        try:
+            prefs = load_prefs()
+            # Prefer QAction state if available, otherwise fall back to checkboxes
+            prefs['show_star_labels'] = bool(getattr(self, 'action_show_star_labels', None) and self.action_show_star_labels.isChecked()) if hasattr(self, 'action_show_star_labels') else bool(self.star_label_chk.isChecked())
+            prefs['show_planet_labels'] = bool(getattr(self, 'action_show_planet_labels', None) and self.action_show_planet_labels.isChecked()) if hasattr(self, 'action_show_planet_labels') else bool(self.planet_label_chk.isChecked())
+            prefs['show_constellations'] = bool(getattr(self, 'action_show_constellations', None) and self.action_show_constellations.isChecked()) if hasattr(self, 'action_show_constellations') else prefs.get('show_constellations', True)
+            save_prefs(prefs)
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def _create_actions(self):
         self.action_update = QtWidgets.QAction('Update Sky', self)
         self.action_update.triggered.connect(self.update_sky)
@@ -425,13 +438,29 @@ class MainWindow(QtWidgets.QMainWindow):
         fileName, _ = QFileDialog.getSaveFileName(self, 'Export PNG', '', 'PNG Files (*.png)')
         if not fileName:
             return
-        size = DEFAULTS['export_default_size']
+        # Ask for export size (px), default to prefs or DEFAULTS
+        try:
+            prefs = load_prefs()
+        except Exception:
+            prefs = {}
+        default_size = int(prefs.get('export_default_size', DEFAULTS.get('export_default_size', 2000)))
+        size, ok = QInputDialog.getInt(self, 'Export size', 'PNG size (px):', value=default_size, min=100, max=10000, step=100)
+        if not ok:
+            return
+
+        # Persist chosen size
+        try:
+            prefs['export_default_size'] = int(size)
+            save_prefs(prefs)
+        except Exception:
+            pass
+
         # Delegate to the active view's exporter
         try:
             if self.current_view == '3d' and self.sky_view_3d:
-                self.sky_view_3d.export_png(fileName, width=size, height=size)
+                export_view_to_png(self.sky_view_3d, fileName, size=size)
             else:
-                self.sky_view.export_png(fileName, width=size, height=size)
+                export_view_to_png(self.sky_view, fileName, size=size)
             QtWidgets.QMessageBox.information(self, 'Export', f'Wrote {fileName}')
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, 'Export failed', str(e))
