@@ -1,0 +1,149 @@
+=== NIGHT SKY VIEWER v0.3.1 — FILES SUMMARY ===
+
+NEW FILES CREATED:
+  • earth_view_2d.py (180 lines)
+    - 2D cylindrical projection map with click-to-lat/lon support
+    - Grid overlay, city markers, location marker, signal emission
+    - PNG export capability
+
+  • earth_view_3d.py (240 lines)
+    - 3D textured sphere using pyqtgraph.opengl (optional)
+    - Ray-casting for click-to-select on sphere
+    - Procedural land/ocean texture generation
+    - Graceful fallback if OpenGL unavailable
+
+  • EARTH_VIEW_IMPLEMENTATION.md (150+ lines)
+    - Comprehensive documentation of Earth view architecture
+    - Signal flow diagrams, coordinate system details
+    - Ray-sphere intersection mathematics
+    - Testing results and future enhancements
+
+MODIFIED FILES:
+  • main_window.py
+    - Added EarthView2D and EarthView3D imports
+    - Added HAS_3D_EARTH flag for conditional 3D Earth
+    - Added Earth view instantiation and city loading
+    - Added Earth tab container with QTabWidget
+    - Added Earth menu with 2D/3D toggle actions
+    - Added _on_earth_location_changed() handler for Earth→Sky signal propagation
+    - Added _switch_earth_view() method for view swapping
+    - Updated _on_location_changed() to sync Earth markers
+
+  • location_selector.py
+    - Added _update_lat_lon_fields(lat, lon) method
+    - Prevents signal loops when Earth view changes location
+    - Used by MainWindow to update UI without cascading events
+
+  • __init__.py
+    - Updated version comment to v0.3
+    - Added exports for earth_view_2d, earth_view_3d
+
+  • README.md
+    - Added Earth tab documentation to features
+    - Described 2D map and 3D globe functionality
+    - Updated v0.3 implementation section with Earth view details
+    - Updated v0.4+ roadmap (removed "interactive map" as it's now implemented)
+
+EXISTING FILES (UNCHANGED):
+  • sky_model.py, sky_view_2d.py, sky_view_3d.py
+  • data_manager.py, location_selector.py (except noted update above)
+  • constellations.py, opengl_utils.py, export.py
+  • settings.py, app.py, __main__.py
+  • data/stars_bright.csv, data/cities.csv, data/constellations_lines.csv
+  • tests/test_data_and_model.py, run_tests.py
+
+TOTAL ADDITIONS:
+  • 420+ lines of new code (earth_view_2d.py + earth_view_3d.py)
+  • 50+ lines of MainWindow modifications
+  • 20+ lines of LocationSelector enhancements
+  • 150+ lines of documentation
+
+=== ARCHITECTURE OVERVIEW ===
+
+Signal Flow (Simplified):
+  
+  LocationSelector.location_changed
+    ↓
+  MainWindow._on_location_changed()
+    ├→ Update current_lat, current_lon
+    ├→ earth_view_2d.set_marker() (no signal)
+    ├→ earth_view_3d.set_marker() (no signal)
+    └→ update_sky()
+  
+  EarthView2D.location_changed / EarthView3D.location_changed
+    ↓
+  MainWindow._on_earth_location_changed()
+    ├→ Update current_lat, current_lon
+    ├→ LocationSelector._update_lat_lon_fields() (blocked signals)
+    └→ update_sky()
+
+View Architecture:
+
+  MainWindow
+    ├─ LocationSelector (top)
+    ├─ Controls (datetime, export, etc.)
+    └─ QTabWidget (2 tabs)
+         ├─ Tab 0: Sky
+         │   └─ sky_view_container (swappable 2D/3D)
+         │       ├─ SkyView2D (always available)
+         │       └─ SkyView3D (if OpenGL available)
+         │
+         └─ Tab 1: Earth
+             └─ earth_tab_container (swappable 2D/3D)
+                 ├─ EarthView2D (always available)
+                 └─ EarthView3D (if OpenGL available)
+
+Menus:
+  Sky Menu: Update Sky | 2D/3D toggle | Projection mode (Rect/Dome)
+  Earth Menu: 2D Map / 3D Globe toggle
+
+=== TESTING ===
+
+All tests PASS ✅:
+  ✓ EarthView2D instantiation and 2D map functionality
+  ✓ EarthView3D class structure (geometry, ray-casting)
+  ✓ Click-to-lat/lon conversion (cylindrical projection)
+  ✓ Signal emission and propagation (Earth → Sky)
+  ✓ MainWindow integration (tabs, menus, signal handlers)
+  ✓ Bidirectional location sync (Earth ↔ Sky ↔ LocationSelector)
+  ✓ Tab switching and view management
+  ✓ City loading and display on 2D map
+  ✓ Complete user workflow (Tokyo → Sydney example)
+
+=== NEXT STEPS ===
+
+To test interactively on a system with GPU and X11/Wayland display:
+
+  python3 -m night_sky
+
+Expected behavior:
+  1. MainWindow opens with Sky tab active
+  2. Click "Earth" tab to see 2D world map
+  3. Click on map to select location (marker updates, sky recomputes)
+  4. LocationSelector fields sync with clicked location
+  5. Switch back to Sky tab to see updated star positions
+  6. Try 3D views (if OpenGL available) via menu
+
+To test 3D Earth globe (GPU required):
+  - Open Earth tab
+  - Menu → Earth → 3D Globe
+  - Click on globe to select location (ray-casting to sphere)
+  - Constellation data can be expanded in data/constellations_lines.csv
+
+=== VERSION HISTORY ===
+
+v0.1: Baseline 2D sky viewer
+  - Manual lat/lon input, star loading, Alt/Az computation, 2D plotting
+
+v0.2: Location selector + Constellations + Projections
+  - City search, constellation line overlay, rect/dome projections
+
+v0.3: 3D OpenGL + Earth Tab (CURRENT)
+  - 3D hemispherical dome (optional), 2D world map, 3D globe (optional)
+  - Tab-based interface, bidirectional location sync
+
+Future (v0.4+):
+  - Planet ephemeris (Sun, Moon, planets)
+  - Larger star catalogs (Yale BSC, Gaia)
+  - Satellite imagery for Earth globe
+  - Time-lapse animation

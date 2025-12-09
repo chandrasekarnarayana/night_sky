@@ -1,0 +1,4 @@
+PyQt5>=5.12
+pyqtgraph>=0.11
+astropy>=5.0
+numpy
