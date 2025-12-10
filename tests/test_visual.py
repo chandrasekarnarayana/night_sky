@@ -5,6 +5,8 @@ from PyQt5 import QtWidgets
 from PIL import Image, ImageChops
 from datetime import datetime, timezone
 
+import sys
+
 from night_sky.sky_model import SkyModel
 from night_sky.sky_view_2d import SkyView2D
 
@@ -19,6 +21,10 @@ def rms_diff(img1: Image.Image, img2: Image.Image) -> float:
 
 
 def test_visual_regression_2d(tmp_path):
+    if sys.platform.startswith("win") or sys.platform.startswith("darwin"):
+        # Qt offscreen differs on Windows/macOS; limit visual regression to Linux for now.
+        import pytest
+        pytest.skip("Visual regression checked on Linux only")
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     sm = SkyModel(limiting_magnitude=6.0)
     snap = sm.compute_snapshot(0.0, 0.0, datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc))
