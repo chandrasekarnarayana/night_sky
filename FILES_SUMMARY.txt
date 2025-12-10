@@ -49,7 +49,7 @@ EXISTING FILES (UNCHANGED):
   • data_manager.py, location_selector.py (except noted update above)
   • constellations.py, opengl_utils.py, export.py
   • settings.py, app.py, __main__.py
-  • data/stars_bright.csv, data/cities.csv, data/constellations_lines.csv
+  • night_sky/data/stars_bright.csv, night_sky/data/cities.csv, night_sky/data/constellations_lines.csv
   • tests/test_data_and_model.py, run_tests.py
 
 TOTAL ADDITIONS:
@@ -128,7 +128,7 @@ To test 3D Earth globe (GPU required):
   - Open Earth tab
   - Menu → Earth → 3D Globe
   - Click on globe to select location (ray-casting to sphere)
-  - Constellation data can be expanded in data/constellations_lines.csv
+  - Constellation data can be expanded in night_sky/data/constellations_lines.csv
 
 === VERSION HISTORY ===
 

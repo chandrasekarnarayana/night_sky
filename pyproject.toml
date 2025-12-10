@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "night-sky"
-version = "0.3.0"
+version = "0.4.0"
 description = "Offline, cross-platform, Python-based planetarium and sky chart generator."
 readme = "README.md"
 authors = [ { name = "Chandrasekar Subramani Narayana" } ]
@@ -28,3 +28,13 @@ dev = ["pytest", "pytest-cov", "black", "mypy"]
 
 [project.scripts]
 night-sky = "night_sky.app:run"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["night_sky*"]
+
+[tool.setuptools.package-data]
+night_sky = ["data/*.csv"]

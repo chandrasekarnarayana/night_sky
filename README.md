@@ -1,116 +1,71 @@
-# Night Sky Viewer — v0.3
+# Night Sky Viewer
 
-This is an offline desktop planetarium with 2D/3D sky visualization and constellation support.
+Night Sky is an offline, cross-platform planetarium with professional-grade accuracy, rich catalogs, and a polished GUI. Run it on Linux, macOS, or Windows. Explore 2D and 3D skies, plan observations, and export publication-quality charts.
 
-Features in v0.3:
-- **3D OpenGL dome**: Immersive hemispherical 3D sky view (when GPU available)
-- **Automatic fallback**: If 3D fails, app gracefully falls back to 2D mode
-- **2D modes**: Rectangular (Az/Alt grid) and Dome (polar projection)
-- **City search**: Select observing location by city name or enter lat/lon manually
-- **Earth tab**: 2D world map with click-to-select location (3D globe if OpenGL available)
-- **Constellation lines**: Display faint lines connecting stars (from offline CSV)
-- **Date/time control**: Pick observation date/time (UTC) with "Now" button
-- **High-resolution export**: Save current view as PNG (2D or 3D) at ≥2000×2000 px
+## Why Night Sky stands out
+- **Accuracy first**: Optional high-accuracy ephemerides (JPL DE421), refraction and light-pollution controls, time-scale awareness (UTC/TT), twilight filtering, and horizon/refraction modeling.
+- **Rich data**: Default bright catalog plus a rich (~108k-star) set, Messier + NGC/IC deep-sky objects, and custom catalog support. Constellations, Moon phase, planets, and DSOs are all built-in.
+- **Immersive visuals**: 2D Rect/Dome and 3D OpenGL dome views, horizon gradient and compass, Milky Way band placeholder, theme presets (Night, Astro Red, High Contrast), label density and limiting magnitude controls.
+- **Interactive & extensible**: Click-to-pick objects with details, preset skies, settings import/export/reset, plugin loader, custom catalogs, and offline help.
+- **High-DPI exports**: PNG exports include labels (as seen), N/E markers, scale bar, legend, and optional metadata—ready for print at 300–600 DPI.
 
-Requirements:
-- Python 3.8+
-- See `requirements.txt` (PyQt5, pyqtgraph, astropy, numpy)
-
-Quick start (Linux/macOS/Windows, using bash):
+## Quick start
+Requirements: Python 3.10+ and dependencies from `requirements.txt`.
 
 ```bash
+# install dependencies
 python3 -m pip install -r requirements.txt
-python3 -m night_sky.app
+
+# run the app
+python3 -m night_sky
+# or install the package locally and use the console script
+python3 -m pip install .
+night-sky
 ```
 
-## v0.2 Features
+Use the control dock to set location, date/time, projection (Rect/Dome), view (2D/3D), themes, limiting magnitude, label density, light pollution, refraction, and ephemeris accuracy. Click objects to see details in the info pane. The Help menu opens offline tutorials.
 
-- **Location selector**: Type city name (e.g., "London") to auto-fill latitude/longitude.
-  Data from `data/cities.csv`.
-- **Projection modes**: Toggle between Rectangular (Az/Alt grid) and Dome (polar)
-  projections via menu or toolbar. Stars and constellations redraw in the new mode.
-- **Constellation lines**: Load constellation definitions from `data/constellations_lines.csv`.
-  Faint lines connect stars (when both are visible). Toggle on/off via constellation loader.
+## Example sky: “Titanic Night”
+Recreate a famous historical sky to see accuracy in action:
+- Location: 41.7325 N, -49.9469 E (North Atlantic)
+- Time (UTC): 1912-04-15 02:20
+- Set the date/time and lat/lon in the control dock, choose Dome view, adjust limiting magnitude for faint horizon stars, and export at high resolution for print.
 
-Data files (v0.2):
+## Saving & exporting
+- Click **Export PNG**. Choose size (2000–4000 px recommended) and fill optional metadata (title, observer, location, datetime).
+- Exports include labels (matching on-screen placement), N/E markers, scale bar, and legend. Suitable for print at 300–600 DPI.
 
-- `data/cities.csv`: City locations (name, country, lat, lon)
-- `data/constellations_lines.csv`: Constellation line definitions
-  (constellation name, star_id_1, star_id_2)
+## Feature overview
+- **Views**: 2D Rectangular Alt/Az and Dome projections; 3D OpenGL dome (auto-fallback to 2D if OpenGL unavailable).
+- **Catalogs**: Bright default, rich (~108k) star set, Messier + NGC/IC DSOs, custom CSVs via catalog selector or plugins.
+- **Ephemerides**: Optional JPL DE421 download for high-accuracy Sun/Moon/planets; refraction; light pollution slider; time-scale (UTC/TT).
+- **Themes & overlays**: Night/Astro Red/High Contrast; label density and limiting magnitude; constellations; Moon phase; planet/DSO labels; horizon compass; Milky Way placeholder band.
+- **Interactivity**: Click object info; preset skies; settings import/export/reset; plugin loader; offline help.
+- **Export**: High-DPI PNG with legend, metadata, scale bar, and N/E markers.
 
-## Smoke test (headless)
+## Data files
+- Stars: `night_sky/data/stars_extended.csv` (default) and `night_sky/data/stars_rich.csv` (rich).
+- Deep-sky: `night_sky/data/messier.csv`, `night_sky/data/ngc_ic.csv`.
+- Constellations: `night_sky/data/constellations_lines.csv`.
+- Cities: `night_sky/data/cities.csv`.
 
-To run a quick headless smoke test that verifies imports and basic astronomy logic:
+You can supply a custom CSV (id,name,ra_deg,dec_deg,mag) via the catalog selector or place a plugin in `~/.night_sky/plugins/` to add data/overlays.
 
+## Headless smoke test
 ```bash
-# from the parent directory of the package (one level up from the `night_sky` folder)
+export QT_QPA_PLATFORM=offscreen  # for headless CI/servers
 python3 - <<'PY'
-import sys
-sys.path.insert(0, '.')
-from night_sky.data_manager import load_bright_stars
-print('stars:', len(load_bright_stars()))
 from datetime import datetime, timezone
 from night_sky.sky_model import SkyModel
-sm = SkyModel()
-print('catalog size:', len(sm.stars))
-print('snapshot visible:', len(sm.compute_snapshot(0.0, 0.0, datetime.now(timezone.utc))))
+sm = SkyModel(limiting_magnitude=6.0)
+snap = sm.compute_snapshot(0.0, 0.0, datetime.now(timezone.utc))
+print("visible stars:", len(snap.visible_stars))
 PY
 ```
 
-Run the GUI app (interactive):
+## Roadmap / TODO (highlights)
+- Installers/bundles (MSI/DMG/AppImage), visual regression tests, better Milky Way texture.
+- Search/go-to, time-lapse/events pane, FOV overlays and coordinate grids, richer import UX.
+- Full i18n/accessibility, improved 3D picking, Gaia-scale optional catalog download.
 
-```bash
-python3 -m night_sky
-```
-
-## v0.3 Implementation
-
-v0.3 adds:
-
-- **3D OpenGL dome**: Full hemispherical 3D rendering using pyqtgraph.opengl
-- **View switching**: Toggle between 2D and 3D via menu/toolbar (3D only if GPU available)
-- **Graceful fallback**: If OpenGL context fails to initialize, app automatically uses 2D
-- **Constellation support in 3D**: Faint lines drawn between visible star pairs in 3D mode
-- **Unified export**: PNG export works for both 2D and 3D views
-- **Earth tab**: Interactive world map for location selection
-  - **2D map** (always available): Cylindrical projection with click-to-lat/lon support
-  - **3D globe** (if OpenGL available): Textured sphere with click-to-ray-cast location selection
-  - **Bidirectional sync**: Selecting location on Earth tab updates Sky view and vice versa
-
-Running the app:
-
-```bash
-python3 -m night_sky
-```
-
-The main window has two tabs:
-
-- **Sky**: Observe the night sky from your selected location
-  - Toggle 2D modes (Rectangular / Dome) or switch to 3D (if available)
-  - Adjust date/time and see stars move
-- **Earth**: Select your observing location
-  - 2D map: Click anywhere to select a location (converts screen coords to lat/lon)
-  - 3D globe: Click to ray-cast and select location on the sphere (if OpenGL available)
-  - City search is still available in the Location Selector above both tabs
-
-## Data Files
-
-Sample data provided (v0.1–v0.3):
-
-- `data/stars_bright.csv`: 10 bright stars with RA/Dec/magnitude
-- `data/cities.csv`: 10 sample cities worldwide
-- `data/constellations_lines.csv`: 6 sample constellation line segments
-
-To expand, replace these CSVs with larger catalogs (Yale Bright Star Catalog, etc.).
-
-## v0.4+ Roadmap
-
-Potential future features:
-
-- **Planet support**: Add major planets (Sun, Moon, Mercury–Neptune) with accurate ephemeris positions
-- **Improved Earth globe**: Use actual satellite imagery or better procedural textures for land/ocean
-- **Improved labels**: Hover-over star/constellation names, adjustable magnitude threshold
-- **Larger star catalogs**: Import full Yale BSC or Gaia DR3
-- **Performance optimizations**: Culling, level-of-detail rendering for 3D
-- **Time-lapse**: Animate sky/Earth position over hours or days
-
+See `docs/RELEASE_NOTES.md` and `docs/TODO.md` for current status and plans.

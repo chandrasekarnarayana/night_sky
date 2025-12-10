@@ -30,6 +30,12 @@ class TestPrefs(unittest.TestCase):
             'show_star_labels': False,
             'show_planet_labels': True,
             'show_constellations': False,
+            'projection_mode': 'dome',
+            'view_mode': '2d',
+            'lat_deg': 12.34,
+            'lon_deg': 56.78,
+            'export_default_size': 2500,
+            'limiting_magnitude': 5.5,
         }
         prefs.save_prefs(test_prefs)
         loaded = prefs.load_prefs()
@@ -37,6 +43,12 @@ class TestPrefs(unittest.TestCase):
         self.assertEqual(bool(loaded.get('show_star_labels')), False)
         self.assertEqual(bool(loaded.get('show_planet_labels')), True)
         self.assertEqual(bool(loaded.get('show_constellations')), False)
+        self.assertEqual(loaded.get('projection_mode'), 'dome')
+        self.assertEqual(loaded.get('view_mode'), '2d')
+        self.assertAlmostEqual(float(loaded.get('lat_deg')), 12.34)
+        self.assertAlmostEqual(float(loaded.get('lon_deg')), 56.78)
+        self.assertEqual(int(loaded.get('export_default_size')), 2500)
+        self.assertAlmostEqual(float(loaded.get('limiting_magnitude')), 5.5)
 
 
 if __name__ == '__main__':
