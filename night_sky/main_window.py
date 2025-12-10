@@ -91,6 +91,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sky_view.set_label_density(int(self.prefs.get('label_density', 1)))
         except Exception:
             pass
+        try:
+            self.sky_view.set_milky_way_texture(self.prefs.get('milky_way_texture', ''))
+            self.sky_view.set_panorama_image(self.prefs.get('panorama_image', ''))
+        except Exception:
+            pass
         self.current_view = preferred_view if preferred_view in ('2d', '3d') else '2d'
         if self.current_view == '3d' and not HAS_3D:
             self.current_view = '2d'
@@ -160,6 +165,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.play_timer = QtCore.QTimer(self)
         self.play_timer.timeout.connect(self._on_time_tick)
         self.playing = False
+        self.time_step_spin = QtWidgets.QSpinBox()
+        self.time_step_spin.setRange(1, 180)
+        self.time_step_spin.setValue(self.time_step_minutes)
+        self.time_step_spin.setSuffix(" min/frame")
+        self.time_step_spin.setToolTip("Time-lapse step per frame")
         self.mag_limit = QDoubleSpinBox()
         self.mag_limit.setRange(-1.0, 12.0)
         self.mag_limit.setSingleStep(0.1)
@@ -184,6 +194,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.theme_combo.addItem(THEMES[key].name, key)
         if self.prefs.get('theme', 'night') in THEMES:
             self.theme_combo.setCurrentIndex(list(THEMES.keys()).index(self.prefs.get('theme', 'night')))
+        self.milky_path_edit = QLineEdit(self.prefs.get('milky_way_texture', ''))
+        self.milky_browse_btn = QPushButton('Milky Way Texture')
+        self.milky_clear_btn = QPushButton('Clear')
+        self.panorama_path_edit = QLineEdit(self.prefs.get('panorama_image', ''))
+        self.panorama_browse_btn = QPushButton('Panorama')
+        self.panorama_clear_btn = QPushButton('Clear')
         self.time_scale_combo = QComboBox()
         self.time_scale_combo.addItems(['UTC', 'TT'])
         self.time_scale_combo.setCurrentIndex(0 if self.prefs.get('time_scale', 'utc').lower() == 'utc' else 1)
@@ -193,9 +209,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.high_acc_ephem_chk.setChecked(bool(self.prefs.get('high_accuracy_ephem', True)))
         self.precession_chk = QtWidgets.QCheckBox('Precession/Nutation')
         self.precession_chk.setChecked(bool(self.prefs.get('precession_nutation', True)))
+        self.aberration_chk = QtWidgets.QCheckBox('Apply aberration')
+        self.aberration_chk.setChecked(bool(self.prefs.get('apply_aberration', True)))
         self.light_pollution_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.light_pollution_slider.setRange(1, 9)
         self.light_pollution_slider.setValue(int(self.prefs.get('light_pollution_bortle', 4)))
+        self.fov_presets = QComboBox()
+        self.fov_presets.addItems([
+            "None",
+            "Wide 60°",
+            "Binocular 7°",
+            "Telescope 1°",
+            "Planetary 0.3°",
+            "DSLR 5°",
+        ])
+        self.fov_apply_btn = QPushButton("Apply FOV")
 
         # Label toggles: stars (bright only) and planets
         prefs = load_prefs()
@@ -207,6 +235,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dso_label_chk.setChecked(bool(prefs.get('show_dso', True)))
 
         self.export_btn = QPushButton('Export PNG')
+        self.selected_target = None
 
         # Side control panel (dock)
         controls = QWidget()
@@ -219,6 +248,10 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_row.addWidget(self.now_btn)
         btn_row.addWidget(self.update_btn)
         vctrl.addLayout(btn_row)
+        vctrl.addWidget(QLabel('Time scrubber (+/-12h):'))
+        vctrl.addWidget(self.time_slider)
+        vctrl.addWidget(QLabel('Time-lapse step (min):'))
+        vctrl.addWidget(self.time_step_spin)
         vctrl.addWidget(QLabel('Projection:'))
         self.proj_rect_radio = QRadioButton('Rectangular')
         self.proj_dome_radio = QRadioButton('Dome')
@@ -248,15 +281,32 @@ class MainWindow(QtWidgets.QMainWindow):
         vctrl.addWidget(self.dso_label_chk)
         vctrl.addWidget(QLabel('Theme:'))
         vctrl.addWidget(self.theme_combo)
+        vctrl.addWidget(QLabel('Milky Way texture (optional):'))
+        milky_row = QHBoxLayout()
+        milky_row.addWidget(self.milky_path_edit)
+        milky_row.addWidget(self.milky_browse_btn)
+        milky_row.addWidget(self.milky_clear_btn)
+        vctrl.addLayout(milky_row)
+        vctrl.addWidget(QLabel('Panorama/landscape (optional):'))
+        pano_row = QHBoxLayout()
+        pano_row.addWidget(self.panorama_path_edit)
+        pano_row.addWidget(self.panorama_browse_btn)
+        pano_row.addWidget(self.panorama_clear_btn)
+        vctrl.addLayout(pano_row)
         vctrl.addWidget(QLabel('Time scale:'))
         vctrl.addWidget(self.time_scale_combo)
         vctrl.addWidget(self.refraction_chk)
         vctrl.addWidget(self.high_acc_ephem_chk)
         vctrl.addWidget(self.precession_chk)
+        vctrl.addWidget(self.aberration_chk)
         vctrl.addWidget(QLabel('Light pollution (Bortle 1-9):'))
         vctrl.addWidget(self.light_pollution_slider)
-        vctrl.addWidget(QLabel('Time scrub (±12h):'))
-        vctrl.addWidget(self.time_slider)
+        vctrl.addWidget(QLabel('FOV radius (deg):'))
+        vctrl.addWidget(self.fov_spin)
+        fov_row = QHBoxLayout()
+        fov_row.addWidget(self.fov_presets)
+        fov_row.addWidget(self.fov_apply_btn)
+        vctrl.addLayout(fov_row)
         play_row = QHBoxLayout()
         self.play_btn = QPushButton('Play/Pause (Space)')
         self.step_minus = QPushButton('← Step')
@@ -369,6 +419,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.custom_catalog_edit.editingFinished.connect(self._on_custom_catalog_changed)
         self.high_acc_ephem_chk.toggled.connect(self._on_high_acc_ephem_toggled)
         self.precession_chk.toggled.connect(self._on_precession_toggled)
+        self.aberration_chk.toggled.connect(self._on_aberration_toggled)
         # Picking connections (2D)
         try:
             self.sky_view.plot.scene().sigMouseClicked.connect(self._on_plot_clicked)
@@ -382,11 +433,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.step_minus.clicked.connect(lambda: self._step_time(-self.time_step_minutes))
         self.step_plus.clicked.connect(lambda: self._step_time(self.time_step_minutes))
         self.time_slider.valueChanged.connect(self._on_time_slider)
+        self.time_step_spin.valueChanged.connect(self._on_time_step_changed)
         self.grid_ra_dec.toggled.connect(self._on_overlay_changed)
         self.grid_alt_az.toggled.connect(self._on_overlay_changed)
         self.grid_ecliptic.toggled.connect(self._on_overlay_changed)
         self.grid_meridian.toggled.connect(self._on_overlay_changed)
         self.fov_spin.valueChanged.connect(self._on_fov_changed)
+        self.fov_apply_btn.clicked.connect(self._on_fov_preset)
+        self.milky_browse_btn.clicked.connect(self._on_browse_milky)
+        self.milky_clear_btn.clicked.connect(self._on_clear_milky)
+        self.panorama_browse_btn.clicked.connect(self._on_browse_panorama)
+        self.panorama_clear_btn.clicked.connect(self._on_clear_panorama)
 
         # Seed UI with persisted location/markers
         try:
@@ -538,6 +595,8 @@ class MainWindow(QtWidgets.QMainWindow):
             prefs['light_pollution_bortle'] = int(self.light_pollution_slider.value())
             prefs['high_accuracy_ephem'] = bool(self.high_acc_ephem_chk.isChecked())
             prefs['precession_nutation'] = bool(self.precession_chk.isChecked())
+            prefs['milky_way_texture'] = self.milky_path_edit.text().strip()
+            prefs['panorama_image'] = self.panorama_path_edit.text().strip()
             save_prefs(prefs)
         except Exception:
             pass
@@ -960,6 +1019,34 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
+    def _on_browse_milky(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Select Milky Way texture', '', 'Images (*.png *.jpg *.jpeg *.webp)')
+        if path:
+            self.milky_path_edit.setText(path)
+            self.sky_view.set_milky_way_texture(path)
+            self.prefs['milky_way_texture'] = path
+            save_prefs(self.prefs)
+
+    def _on_clear_milky(self):
+        self.milky_path_edit.setText('')
+        self.sky_view.set_milky_way_texture('')
+        self.prefs['milky_way_texture'] = ''
+        save_prefs(self.prefs)
+
+    def _on_browse_panorama(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Select panorama/landscape', '', 'Images (*.png *.jpg *.jpeg *.webp)')
+        if path:
+            self.panorama_path_edit.setText(path)
+            self.sky_view.set_panorama_image(path)
+            self.prefs['panorama_image'] = path
+            save_prefs(self.prefs)
+
+    def _on_clear_panorama(self):
+        self.panorama_path_edit.setText('')
+        self.sky_view.set_panorama_image('')
+        self.prefs['panorama_image'] = ''
+        save_prefs(self.prefs)
+
     def _on_time_scale_changed(self, idx: int):
         scale = 'utc' if idx == 0 else 'tt'
         self.prefs['time_scale'] = scale
@@ -1006,12 +1093,29 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_high_acc_ephem_toggled(self, checked: bool):
         self.prefs['high_accuracy_ephem'] = bool(checked)
         save_prefs(self.prefs)
-        # placeholder hook for future high-accuracy ephemerides
+        self.sky_model.high_accuracy_ephem = bool(checked)
+        if checked:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Download ephemeris?",
+                "High-accuracy mode requires downloading a JPL DE ephemeris kernel (a few MB). Download now?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            )
+            if reply == QtWidgets.QMessageBox.Yes:
+                path = self.sky_model._ensure_ephem_kernel()
+                if not path:
+                    QtWidgets.QMessageBox.warning(self, "Download failed", "Could not download ephemeris kernel.")
 
     def _on_precession_toggled(self, checked: bool):
         self.prefs['precession_nutation'] = bool(checked)
         save_prefs(self.prefs)
         # hook for future precession/nutation toggles
+        self.sky_model.precession_nutation = bool(checked)
+
+    def _on_aberration_toggled(self, checked: bool):
+        self.prefs['apply_aberration'] = bool(checked)
+        save_prefs(self.prefs)
+        self.sky_model.apply_aberration = bool(checked)
 
     def _on_export_settings(self):
         path, _ = QFileDialog.getSaveFileName(self, 'Export Settings', '', 'JSON Files (*.json)')
@@ -1056,6 +1160,10 @@ class MainWindow(QtWidgets.QMainWindow):
         kind, obj = picked
         if obj is None:
             return
+        try:
+            self._center_on_object(obj)
+        except Exception:
+            pass
         info_lines = []
         if kind == 'star':
             info_lines.append(f"Star: {obj.name} (id {obj.id})")
@@ -1075,6 +1183,32 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_help(self):
         dlg = HelpViewer(self)
         dlg.exec_()
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == QtCore.Qt.Key_Left:
+            self._step_time(-self.time_step_minutes)
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_Right:
+            self._step_time(self.time_step_minutes)
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_Space,):
+            self._toggle_play()
+            event.accept()
+            return
+        if key in (QtCore.Qt.Key_Plus, QtCore.Qt.Key_Equal):
+            self.time_step_minutes = min(180, self.time_step_minutes + 1)
+            self.time_step_spin.setValue(self.time_step_minutes)
+            event.accept()
+            return
+        if key == QtCore.Qt.Key_Minus:
+            self.time_step_minutes = max(1, self.time_step_minutes - 1)
+            self.time_step_spin.setValue(self.time_step_minutes)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _show_search(self):
         # Build object list from current snapshot caches
@@ -1142,6 +1276,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """Center/pan views toward the selected object."""
         if obj is None:
             return
+        try:
+            az_sel = float(getattr(obj, 'az_deg', 0.0))
+            alt_sel = float(getattr(obj, 'alt_deg', 0.0))
+            self.selected_target = (az_sel, alt_sel)
+            if hasattr(self.sky_view, 'set_fov_center'):
+                self.sky_view.set_fov_center(az_sel, alt_sel)
+        except Exception:
+            pass
         if self.current_view == '2d':
             try:
                 if self.sky_view.mode == 'rect':
@@ -1175,6 +1317,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_time_tick(self):
         self._step_time(self.time_step_minutes)
 
+    def _on_time_step_changed(self, val: int):
+        self.time_step_minutes = max(1, int(val))
+
     def _step_time(self, minutes: int):
         qdt = self.datetime_edit.dateTime().toUTC()
         dt = qdt.addSecs(minutes * 60)
@@ -1205,5 +1350,26 @@ class MainWindow(QtWidgets.QMainWindow):
             radius = None
         try:
             self.sky_view.set_fov_radius(radius)
+            if radius and self.selected_target:
+                az, alt = self.selected_target
+                self.sky_view.set_fov_center(az, alt)
+            if radius is None:
+                try:
+                    self.sky_view.clear_fov_center()
+                except Exception:
+                    pass
         except Exception:
             pass
+
+    def _on_fov_preset(self):
+        preset = self.fov_presets.currentText()
+        mapping = {
+            "None": 0.0,
+            "Wide 60°": 30.0,
+            "Binocular 7°": 3.5,
+            "Telescope 1°": 0.5,
+            "Planetary 0.3°": 0.15,
+            "DSLR 5°": 2.5,
+        }
+        val = mapping.get(preset, 0.0)
+        self.fov_spin.setValue(val)

@@ -21,7 +21,7 @@ value objects intended for consumption by GUI code, exports, and tests.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Union, Optional, Tuple
 from contextlib import contextmanager
@@ -107,8 +107,14 @@ class DeepSkyObject:
 class SkyModel:
     # Major planets to track
     PLANETS = ['mercury', 'venus', 'mars', 'jupiter', 'saturn']
+    METEOR_RADIANTS = [
+        {"name": "Perseids", "ra_deg": 46.0, "dec_deg": 58.0},
+        {"name": "Geminids", "ra_deg": 112.0, "dec_deg": 33.0},
+        {"name": "Quadrantids", "ra_deg": 230.0, "dec_deg": 49.0},
+        {"name": "Lyrids", "ra_deg": 272.0, "dec_deg": 34.0},
+    ]
     
-    def __init__(self, stars_csv: Union[str, Path] = 'stars_bright.csv', limiting_magnitude: float = 6.0, apply_refraction: bool = False, catalog_mode: str = 'default', custom_catalog: str = '', time_scale: str = 'utc', twilight_sun_alt: float = 90.0, light_pollution_bortle: int = 4, high_accuracy_ephem: bool = False, precession_nutation: bool = True) -> None:
+    def __init__(self, stars_csv: Union[str, Path] = 'stars_bright.csv', limiting_magnitude: float = 6.0, apply_refraction: bool = False, catalog_mode: str = 'default', custom_catalog: str = '', time_scale: str = 'utc', twilight_sun_alt: float = 90.0, light_pollution_bortle: int = 4, high_accuracy_ephem: bool = False, precession_nutation: bool = True, apply_aberration: bool = True) -> None:
         """Create a SkyModel and load the bright-star catalog.
 
         `stars_csv` may be a filename inside `data/` (default) or a path.
@@ -124,6 +130,7 @@ class SkyModel:
         self.light_pollution_bortle = max(1, min(int(light_pollution_bortle), 9))
         self.high_accuracy_ephem = bool(high_accuracy_ephem)
         self.precession_nutation = bool(precession_nutation)
+        self.apply_aberration = bool(apply_aberration)
         self._ephem_kernel_path = None
         self.load_stars()
 
@@ -226,6 +233,32 @@ class SkyModel:
             summary.append({'name': p.name, 'rise': r, 'set': s, 'culmination_alt': c})
         return summary
 
+    def _detect_conjunctions(self, planets: List[Planet], moon_obj: Optional[Planet], sun_coord: Optional[SkyCoord]) -> List[dict]:
+        """Detect simple close approaches between visible planets/Moon (and coarse eclipses)."""
+        events = []
+        bodies = []
+        for p in planets:
+            bodies.append((p.name, SkyCoord(p.ra_deg * u.deg, p.dec_deg * u.deg, frame='icrs')))
+        if moon_obj:
+            bodies.append(("Moon", SkyCoord(moon_obj.ra_deg * u.deg, moon_obj.dec_deg * u.deg, frame='icrs')))
+        # Pairwise separations
+        for i in range(len(bodies)):
+            for j in range(i + 1, len(bodies)):
+                name_a, coord_a = bodies[i]
+                name_b, coord_b = bodies[j]
+                sep = float(coord_a.separation(coord_b).degree)
+                if sep < 5.0:
+                    events.append({'name': f'Conjunction: {name_a} & {name_b}', 'separation_deg': sep})
+        # Coarse eclipses using Sun/Moon separation
+        if sun_coord and moon_obj:
+            moon_c = SkyCoord(moon_obj.ra_deg * u.deg, moon_obj.dec_deg * u.deg, frame='icrs')
+            sep = float(sun_coord.separation(moon_c).degree)
+            if sep < 8.0:
+                events.append({'name': 'Possible solar eclipse window', 'separation_deg': sep})
+            if abs(sep - 180.0) < 8.0:
+                events.append({'name': 'Possible lunar eclipse window', 'separation_deg': abs(sep - 180.0)})
+        return events
+
     def get_deep_sky(self, lat_deg: float, lon_deg: float, dt_utc: datetime) -> List[DeepSkyObject]:
         """Return deep sky objects above the horizon."""
         try:
@@ -265,6 +298,27 @@ class SkyModel:
                     az_deg=az,
                     obj_type=row.get('type', 'DSO')
                 ))
+        # Add meteor shower radiants (static list)
+        try:
+            if self.METEOR_RADIANTS:
+                rad_ra = np.array([r['ra_deg'] for r in self.METEOR_RADIANTS])
+                rad_dec = np.array([r['dec_deg'] for r in self.METEOR_RADIANTS])
+                rad_coords = SkyCoord(ra=rad_ra * u.deg, dec=rad_dec * u.deg, frame='icrs')
+                rad_aa = rad_coords.transform_to(altaz_frame)
+                for i, rad in enumerate(self.METEOR_RADIANTS):
+                    alt = float(self._apply_refraction(float(rad_aa.alt.degree[i])))
+                    az = float(rad_aa.az.degree[i])
+                    if alt > 0:
+                        objs.append(DeepSkyObject(
+                            name=rad['name'],
+                            ra_deg=float(rad_ra[i]),
+                            dec_deg=float(rad_dec[i]),
+                            alt_deg=alt,
+                            az_deg=az,
+                            obj_type="Meteor radiant"
+                        ))
+        except Exception:
+            pass
         return objs
 
     def _normalize_time(self, dt_utc: datetime) -> datetime:
@@ -340,6 +394,7 @@ class SkyModel:
         times = Time(dt_utc)
         location = EarthLocation(lat=lat_deg * u.deg, lon=lon_deg * u.deg, height=0 * u.m)
         altaz_frame = AltAz(obstime=times, location=location)
+        sun_coord_cache = None
 
         visible_planets = []
         for planet_name in self.PLANETS:
@@ -458,8 +513,8 @@ class SkyModel:
         # Twilight filtering: optionally hide objects when Sun is above threshold
         try:
             with self._ephem_context():
-                sun_coord = get_body('sun', Time(dt_utc))
-            sun_aa = sun_coord.transform_to(altaz_frame)
+                sun_coord_cache = get_body('sun', Time(dt_utc))
+            sun_aa = sun_coord_cache.transform_to(altaz_frame)
             if float(self.twilight_sun_alt) < 90.0 and sun_aa.alt.degree > float(self.twilight_sun_alt):
                 visible_stars = []
                 visible_planets = []
@@ -479,5 +534,9 @@ class SkyModel:
             events = self._compute_rise_set_summary(lat_deg, lon_deg, dt_utc, visible_planets, moon_obj)
         except Exception:
             events = []
+        try:
+            events += self._detect_conjunctions(visible_planets, moon_obj, sun_coord_cache)
+        except Exception:
+            pass
 
         return SkySnapshot(visible_stars=visible_stars, visible_planets=visible_planets, moon=moon_obj, deep_sky_objects=deep_sky, events=events)

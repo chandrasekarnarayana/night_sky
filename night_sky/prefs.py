@@ -32,6 +32,9 @@ DEFAULT_PREFS = {
     'light_pollution_bortle': 4,
     'high_accuracy_ephem': False,
     'precession_nutation': True,
+    'apply_aberration': True,
+    'milky_way_texture': '',
+    'panorama_image': '',
 }
 
 

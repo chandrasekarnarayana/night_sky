@@ -501,17 +501,35 @@ class SkyView3D(QtWidgets.QWidget):
             pass
 
     def pick_object(self, screen_pos, tol_px: int = 12):
-        """Approximate picking using overlay label positions."""
-        if not getattr(self, '_overlay_label_positions', None):
-            return None
+        """Picking using projected Alt/Az -> overlay pixel coordinates.
+
+        Looks at stars, planets, and DSOs and returns nearest within tolerance.
+        """
+        w = max(10, self._overlay.width())
+        h = max(10, self._overlay.height())
         best = None
         best_dist = tol_px
-        for lbl in self._overlay_label_positions:
-            dx = screen_pos.x() - lbl['x']
-            dy = screen_pos.y() - lbl['y']
+
+        def check(px, py, kind, obj):
+            nonlocal best, best_dist
+            dx = screen_pos.x() - px
+            dy = screen_pos.y() - py
             dist = (dx * dx + dy * dy) ** 0.5
             if dist < best_dist:
                 best_dist = dist
-                src = lbl.get('src', {})
-                best = src.get('type', None), src.get('object', None)
+                best = (kind, obj)
+
+        # Stars
+        for s in self._stars_cache:
+            px, py = self._compute_screen_coords_for_altaz(s.alt_deg, s.az_deg, w, h)
+            check(px, py, 'star', s)
+        # Planets
+        for p in self._planets_cache:
+            px, py = self._compute_screen_coords_for_altaz(p.alt_deg, p.az_deg, w, h)
+            kind = 'moon' if getattr(p, 'name', '').lower() == 'moon' else 'planet'
+            check(px, py, kind, p)
+        # Deep sky
+        for d in self._dso_cache:
+            px, py = self._compute_screen_coords_for_altaz(d.alt_deg, d.az_deg, w, h)
+            check(px, py, 'dso', d)
         return best

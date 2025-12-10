@@ -1,4 +1,4 @@
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtGui, QtCore
 import pyqtgraph as pg
 import numpy as np
 from PyQt5.QtGui import QPixmap, QFontMetrics, QLinearGradient, QColor
@@ -55,6 +55,11 @@ class SkyView2D(QtWidgets.QWidget):
         self.show_ecliptic = False
         self.show_meridian = False
         self.fov_radius_deg: float | None = None
+        self._fov_center = None  # (az, alt) center for FOV snap
+        self.milky_way_texture_path: str = ''
+        self.panorama_image_path: str = ''
+        self._milky_way_item = None
+        self._panorama_item = None
         self._apply_background()
         self._last_screen_map = {}  # id -> screen QPointF cache
         # storage of label items (pyqtgraph TextItem)
@@ -77,6 +82,38 @@ class SkyView2D(QtWidgets.QWidget):
             self.plot.setBackground(grad)
         except Exception:
             self.plot.setBackground('#05070a')
+
+    def _load_image_item(self, path: str, rect: QtCore.QRectF, opacity: float = 0.4):
+        """Load an image file as a pg.ImageItem scaled into the provided rect."""
+        if not path:
+            return None
+        image = QtGui.QImage(path)
+        if image.isNull():
+            return None
+        try:
+            image = image.convertToFormat(QtGui.QImage.Format_RGBA8888)
+            ptr = image.bits()
+            ptr.setsize(image.byteCount())
+            arr = np.frombuffer(ptr, np.uint8).reshape((image.height(), image.width(), 4))
+            arr = arr.astype(np.float32) / 255.0
+            item = pg.ImageItem(arr)
+            item.setRect(rect)
+            item.setOpacity(opacity)
+            return item
+        except Exception:
+            return None
+
+    def set_milky_way_texture(self, path: str):
+        """Set optional Milky Way texture overlay."""
+        self.milky_way_texture_path = path or ''
+        if self._last_stars:
+            self.update_sky(self._last_stars, self._last_planets, self._last_dso)
+
+    def set_panorama_image(self, path: str):
+        """Set optional panorama/landscape near the horizon."""
+        self.panorama_image_path = path or ''
+        if self._last_stars:
+            self.update_sky(self._last_stars, self._last_planets, self._last_dso)
 
     def update_sky(self, stars: list, planets: list = None, deep_sky: list = None):
         """Redraw the plot from lists of `Star` and `Planet` objects.
@@ -112,6 +149,8 @@ class SkyView2D(QtWidgets.QWidget):
             except Exception:
                 pass
         self.ambient_items = []
+        self._milky_way_item = None
+        self._panorama_item = None
         self._apply_background()
 
         if not stars and not planets:
@@ -177,13 +216,19 @@ class SkyView2D(QtWidgets.QWidget):
                 t.setPos(lx, ly)
                 self.plot.addItem(t)
                 self.horizon_items.append(t)
-            # simple Milky Way band placeholder
-            theta = np.linspace(0, 2 * np.pi, 400)
-            xmw = 0.9 * np.sin(theta)
-            ymw = 0.3 * np.cos(theta)
-            mw = pg.PlotDataItem(xmw, ymw, pen=pg.mkPen((120, 140, 200, 60), width=6))
-            self.plot.addItem(mw)
-            self.ambient_items.append(mw)
+            # optional Milky Way texture (full dome) and panorama near the horizon
+            milky_rect = QtCore.QRectF(-1.1, -1.1, 2.2, 2.2)
+            pano_rect = QtCore.QRectF(-1.1, -1.1, 2.2, 0.55)
+            if self.milky_way_texture_path:
+                self._milky_way_item = self._load_image_item(self.milky_way_texture_path, milky_rect, opacity=0.42)
+                if self._milky_way_item:
+                    self.plot.addItem(self._milky_way_item)
+                    self.ambient_items.append(self._milky_way_item)
+            if self.panorama_image_path:
+                self._panorama_item = self._load_image_item(self.panorama_image_path, pano_rect, opacity=0.8)
+                if self._panorama_item:
+                    self.plot.addItem(self._panorama_item)
+                    self.ambient_items.append(self._panorama_item)
             
             for s in visible_stars:
                 az_rad = np.radians(s.az_deg)
@@ -384,7 +429,7 @@ class SkyView2D(QtWidgets.QWidget):
         # Grab the plot widget as a pixmap and scale to desired size
         # Use devicePixelRatio scaling for HiDPI if available
         pm: QPixmap = self.plot.grab()
-        # scale while keeping aspect ratio
+        # scale while keeping aspect ratio stable
         pm = pm.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         # composite labels if we have placed positions
         if self._placed_labels:
@@ -537,10 +582,13 @@ class SkyView2D(QtWidgets.QWidget):
         # FOV circle
         if self.fov_radius_deg is not None:
             pen = pg.mkPen((120, 200, 200, 180), width=2, style=Qt.DashLine)
-            # center at current target (here: zenith proxy)
+            # center at selected target (defaults to zenith proxy)
+            if self._fov_center:
+                az_center, alt_center = self._fov_center
+            else:
+                alt_center = 45.0
+                az_center = 180.0
             az = np.linspace(0, 360, 200)
-            alt_center = 45.0
-            az_center = 180.0
             x = (az_center + self.fov_radius_deg * np.sin(np.radians(az))) % 360
             y = alt_center + self.fov_radius_deg * np.cos(np.radians(az))
             self.plot.addItem(pg.PlotDataItem(x, y, pen=pen))
@@ -578,6 +626,15 @@ class SkyView2D(QtWidgets.QWidget):
         self.fov_radius_deg = radius_deg
         if self._last_stars or self._last_planets:
             self.update_sky(self._last_stars, self._last_planets, self._last_dso)
+
+    def set_fov_center(self, az_deg: float, alt_deg: float):
+        """Set the FOV overlay center (Az/Alt)."""
+        self._fov_center = (az_deg, alt_deg)
+        if self._last_stars or self._last_planets:
+            self.update_sky(self._last_stars, self._last_planets, self._last_dso)
+
+    def clear_fov_center(self):
+        self._fov_center = None
 
     def set_projection_mode(self, mode: str):
         """Set projection mode: 'rect' or 'dome' and redraw current sky.

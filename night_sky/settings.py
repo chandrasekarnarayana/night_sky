@@ -21,6 +21,9 @@ DEFAULTS = {
     'light_pollution_bortle': 4,  # 1..9
     'high_accuracy_ephem': False,
     'precession_nutation': True,
+    'apply_aberration': True,
+    'milky_way_texture': '',
+    'panorama_image': '',
 }
 
 def data_path(filename: str) -> Path:

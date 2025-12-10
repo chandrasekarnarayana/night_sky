@@ -10,17 +10,17 @@ Night Sky is an offline, cross-platform planetarium with professional-grade accu
 - **High-DPI exports**: PNG exports include labels (as seen), N/E markers, scale bar, legend, and optional metadata—ready for print at 300–600 DPI.
 
 ## Quick start
-Requirements: Python 3.10+ and dependencies from `requirements.txt`.
+Requirements: Python 3.10+.
 
 ```bash
-# install dependencies
-python3 -m pip install -r requirements.txt
+# from PyPI (recommended)
+python3 -m pip install night-sky
+night-sky  # launches the GUI
 
-# run the app
-python3 -m night_sky
-# or install the package locally and use the console script
+# or run from source
+python3 -m pip install -r requirements.txt
 python3 -m pip install .
-night-sky
+python3 -m night_sky
 ```
 
 Use the control dock to set location, date/time, projection (Rect/Dome), view (2D/3D), themes, limiting magnitude, label density, light pollution, refraction, and ephemeris accuracy. Click objects to see details in the info pane. The Help menu opens offline tutorials.
@@ -50,6 +50,10 @@ Recreate a famous historical sky to see accuracy in action:
 - Cities: `night_sky/data/cities.csv`.
 
 You can supply a custom CSV (id,name,ra_deg,dec_deg,mag) via the catalog selector or place a plugin in `~/.night_sky/plugins/` to add data/overlays.
+
+### Scientific assumptions
+- Default ephemerides are accurate for general use; enable “High-accuracy ephemerides” to download a JPL DE kernel for more precise Sun/Moon/planet positions.
+- Refraction and light-pollution controls are first-order approximations; aberration/precession toggles are available in advanced controls.
 
 ## Headless smoke test
 ```bash

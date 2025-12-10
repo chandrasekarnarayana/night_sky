@@ -6,6 +6,7 @@
 - Milky Way & horizon: replace placeholder band with real texture; gradient/twilight hues; optional panorama/landscape import.
 - 3D picking: use camera projection math for accurate hit-testing.
 - Ephemeris: prompt/download DE kernels; toggle accuracy; document scientific assumptions; add basic aberration/precession toggles surfaced in UI.
+- Supply real Milky Way/panorama assets for users or bundle defaults, and consider mirroring overlays in 3D once textures are available.
 
 ## P2 — Interaction & planning depth
 - Search/go-to: fuzzy search + smooth center in 2D/3D; autocomplete; hotkey.
@@ -15,8 +16,8 @@
 
 ## P3 — Data & accuracy
 - Offer Gaia-derived optional catalog download (LOD aware); cull by mag/FOV; cache projections.
-- Expand NGC/IC attributes; add constellation names/labels; optional constellation artwork.
-- Light pollution/refraction model refinement; extinction/airmass coloring; twilight limiting-mag estimator.
+- Expand NGC/IC attributes (size/type/surface-brightness); add constellation names/labels and optional constellation artwork overlays.
+- Light pollution/refraction model refinement; extinction/airmass coloring; twilight limiting-mag estimator tied to Bortle slider.
 
 ## P4 — Accessibility & i18n
 - Font scaling slider; keyboard navigation audit; colorblind-friendly theme preset.
@@ -30,7 +31,7 @@
 - Expand offline help with screenshots/tutorials; “How to use your own catalogs” step-by-step; “Best practices for exports/printing”.
 
 ## Release readiness checklist
-- Bump version, update README/release notes.
+- Bump version, update README (PyPI install) / release notes.
 - CI green on Linux/macOS/Windows with wheel build/install smoke tests and visual regression.
 - Packages include data assets; optional DE kernel download prompt documented.
 - Prepare PyPI release (sdist+wheel) and GitHub release notes; tag and upload when ready.

@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "black", "mypy"]
+dev = ["pytest", "pytest-cov", "black", "mypy", "pillow"]
 
 [project.scripts]
 night-sky = "night_sky.app:run"
