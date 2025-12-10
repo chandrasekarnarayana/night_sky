@@ -1,0 +1,11 @@
+numpy
+astropy
+pyqtgraph
+PyQt5
+
+[dev]
+pytest
+pytest-cov
+black
+mypy
+pillow

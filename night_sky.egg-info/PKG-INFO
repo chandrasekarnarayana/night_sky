@@ -1,0 +1,97 @@
+Metadata-Version: 2.4
+Name: night-sky
+Version: 0.4.0
+Summary: Offline, cross-platform, Python-based planetarium and sky chart generator.
+Author: Chandrasekar Subramani Narayana
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: astropy
+Requires-Dist: pyqtgraph
+Requires-Dist: PyQt5
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: pillow; extra == "dev"
+
+# Night Sky Viewer
+
+Night Sky is an offline, cross-platform planetarium with professional-grade accuracy, rich catalogs, and a polished GUI. Run it on Linux, macOS, or Windows. Explore 2D and 3D skies, plan observations, and export publication-quality charts.
+
+## Why Night Sky stands out
+- **Accuracy first**: Optional high-accuracy ephemerides (JPL DE421), refraction and light-pollution controls, time-scale awareness (UTC/TT), twilight filtering, and horizon/refraction modeling.
+- **Rich data**: Default bright catalog plus a rich (~108k-star) set, Messier + NGC/IC deep-sky objects, and custom catalog support. Constellations, Moon phase, planets, and DSOs are all built-in.
+- **Immersive visuals**: 2D Rect/Dome and 3D OpenGL dome views, horizon gradient and compass, Milky Way band placeholder, theme presets (Night, Astro Red, High Contrast), label density and limiting magnitude controls.
+- **Interactive & extensible**: Click-to-pick objects with details, preset skies, settings import/export/reset, plugin loader, custom catalogs, and offline help.
+- **High-DPI exports**: PNG exports include labels (as seen), N/E markers, scale bar, legend, and optional metadata—ready for print at 300–600 DPI.
+
+## Quick start
+Requirements: Python 3.10+.
+
+```bash
+# from PyPI (recommended)
+python3 -m pip install night-sky
+night-sky  # launches the GUI
+
+# or run from source
+python3 -m pip install -r requirements.txt
+python3 -m pip install .
+python3 -m night_sky
+```
+
+Use the control dock to set location, date/time, projection (Rect/Dome), view (2D/3D), themes, limiting magnitude, label density, light pollution, refraction, and ephemeris accuracy. Click objects to see details in the info pane. The Help menu opens offline tutorials.
+
+## Example sky: “Titanic Night”
+Recreate a famous historical sky to see accuracy in action:
+- Location: 41.7325 N, -49.9469 E (North Atlantic)
+- Time (UTC): 1912-04-15 02:20
+- Set the date/time and lat/lon in the control dock, choose Dome view, adjust limiting magnitude for faint horizon stars, and export at high resolution for print.
+
+## Saving & exporting
+- Click **Export PNG**. Choose size (2000–4000 px recommended) and fill optional metadata (title, observer, location, datetime).
+- Exports include labels (matching on-screen placement), N/E markers, scale bar, and legend. Suitable for print at 300–600 DPI.
+
+## Feature overview
+- **Views**: 2D Rectangular Alt/Az and Dome projections; 3D OpenGL dome (auto-fallback to 2D if OpenGL unavailable).
+- **Catalogs**: Bright default, rich (~108k) star set, Messier + NGC/IC DSOs, custom CSVs via catalog selector or plugins.
+- **Ephemerides**: Optional JPL DE421 download for high-accuracy Sun/Moon/planets; refraction; light pollution slider; time-scale (UTC/TT).
+- **Themes & overlays**: Night/Astro Red/High Contrast; label density and limiting magnitude; constellations; Moon phase; planet/DSO labels; horizon compass; Milky Way placeholder band.
+- **Interactivity**: Click object info; preset skies; settings import/export/reset; plugin loader; offline help.
+- **Export**: High-DPI PNG with legend, metadata, scale bar, and N/E markers.
+
+## Data files
+- Stars: `night_sky/data/stars_extended.csv` (default) and `night_sky/data/stars_rich.csv` (rich).
+- Deep-sky: `night_sky/data/messier.csv`, `night_sky/data/ngc_ic.csv`.
+- Constellations: `night_sky/data/constellations_lines.csv`.
+- Cities: `night_sky/data/cities.csv`.
+
+You can supply a custom CSV (id,name,ra_deg,dec_deg,mag) via the catalog selector or place a plugin in `~/.night_sky/plugins/` to add data/overlays.
+
+### Scientific assumptions
+- Default ephemerides are accurate for general use; enable “High-accuracy ephemerides” to download a JPL DE kernel for more precise Sun/Moon/planet positions.
+- Refraction and light-pollution controls are first-order approximations; aberration/precession toggles are available in advanced controls.
+
+## Headless smoke test
+```bash
+export QT_QPA_PLATFORM=offscreen  # for headless CI/servers
+python3 - <<'PY'
+from datetime import datetime, timezone
+from night_sky.sky_model import SkyModel
+sm = SkyModel(limiting_magnitude=6.0)
+snap = sm.compute_snapshot(0.0, 0.0, datetime.now(timezone.utc))
+print("visible stars:", len(snap.visible_stars))
+PY
+```
+
+## Roadmap / TODO (highlights)
+- Installers/bundles (MSI/DMG/AppImage), visual regression tests, better Milky Way texture.
+- Search/go-to, time-lapse/events pane, FOV overlays and coordinate grids, richer import UX.
+- Full i18n/accessibility, improved 3D picking, Gaia-scale optional catalog download.
+
+See `docs/RELEASE_NOTES.md` and `docs/TODO.md` for current status and plans.

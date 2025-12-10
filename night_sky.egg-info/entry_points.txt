@@ -1,0 +1,2 @@
+[console_scripts]
+night-sky = night_sky.app:run
