@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from typing import Sequence
 
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtCore
 
 from .main_window import MainWindow
 
@@ -27,6 +27,8 @@ def _apply_dark_theme_if_available(app: QtWidgets.QApplication) -> None:
 def run(argv: Sequence[str] | None = None) -> int:
     """Start the Qt application and return its exit code."""
     args = sys.argv if argv is None else list(argv)
+    # Prefer software OpenGL to avoid driver crashes/segfaults on systems without stable GL.
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseSoftwareOpenGL, on=True)
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(args)
     _apply_dark_theme_if_available(app)
 
