@@ -45,9 +45,9 @@ jobs:
       - name: Smoke test
         run: |
           python - <<'PY'
-from night_sky.sky_model import SkyModel
-from datetime import datetime, timezone
-sm = SkyModel(limiting_magnitude=6.0)
-snap = sm.compute_snapshot(0.0, 0.0, datetime.now(timezone.utc))
-print('stars', len(snap.visible_stars))
-PY
+          from night_sky.sky_model import SkyModel
+          from datetime import datetime, timezone
+          sm = SkyModel(limiting_magnitude=6.0)
+          snap = sm.compute_snapshot(0.0, 0.0, datetime.now(timezone.utc))
+          print('stars', len(snap.visible_stars))
+          PY
