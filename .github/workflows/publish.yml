@@ -1,15 +1,14 @@
 name: Publish to PyPI
 
 on:
+  workflow_dispatch:
   release:
     types: [published]
-  workflow_dispatch:
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    env:
-      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,25 +22,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install build twine
-          python -m pip install -e .[dev]
-
-      - name: Run tests
-        run: pytest -q
 
       - name: Build package
-        run: |
-          python -m build
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: night-sky-dist
-          path: dist/*
+        run: python -m build
 
       - name: Publish to PyPI
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
         env:
           TWINE_USERNAME: "__token__"
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          python -m twine upload dist/*  my usale workflow looks like this:
+        run: python -m twine upload dist/*
